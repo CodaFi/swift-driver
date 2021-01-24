@@ -16,7 +16,7 @@ import TSCBasic
 /// build.
 ///
 /// This is as opposed to information derived from the build record, which
-/// from our perspective only records informatiuon about inputs that were known
+/// from our perspective only records information about inputs that were known
 /// to the driver in the past.
 /*@_spi(Testing)*/ public struct InputInfo: Equatable {
 

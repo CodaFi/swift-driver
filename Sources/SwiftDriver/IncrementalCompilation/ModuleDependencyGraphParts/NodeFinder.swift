@@ -81,7 +81,7 @@ extension ModuleDependencyGraph.NodeFinder {
     return uses
   }
 
-  /// Retrieves the set of uses corresponding to a given definition node in a
+  /// Retrieves the array of uses corresponding to a given definition node in a
   /// stable order dictated by the graph node's underlying data.
   ///
   /// - Seealso: The `Comparable` conformance for `Graph.Node`.
