@@ -12,53 +12,24 @@
 import TSCBasic
 import Foundation
 import SwiftOptions
-public class IncrementalCompilationState {
-  /// The oracle for deciding what depends on what. Applies to this whole module.
-  private let moduleDependencyGraph: ModuleDependencyGraph
 
-  /// If non-null outputs information for `-driver-show-incremental` for input path
-  private let reporter: Reporter?
+public enum IncrementalBuild {
+  static func plan(
+    driver: Driver,
+    jobsInPhases: JobsInPhases,
+    options: IncrementalBuild.Options) throws -> IncrementalBuild.Plan? {
 
-  /// All of the pre-compile or compilation job (groups) known to be required (i.e. in 1st wave).
-  /// Already batched, and in order of input files.
-  public let mandatoryJobsInOrder: [Job]
 
-  /// Sadly, has to be `var` for formBatchedJobs
-  private var driver: Driver
-
-  /// Track required jobs that haven't finished so the build record can record the corresponding
-  /// input statuses.
-  private var unfinishedJobs: Set<Job>
-
-  /// Keyed by primary input. As required compilations are discovered after the first wave, these shrink.
-  private var skippedCompileGroups = [TypedVirtualPath: CompileJobGroup]()
-
-  /// Jobs to run *after* the last compile, for instance, link-editing.
-  public let jobsAfterCompiles: [Job]
-
-  private let confinementQueue = DispatchQueue(label: "com.apple.swift-driver.IncrementalCompilationState")
-
-// MARK: - Creating IncrementalCompilationState if possible
-  /// Return nil if not compiling incrementally
-  init?(
-    driver: inout Driver,
-    jobsInPhases: JobsInPhases
-  ) throws {
-    guard driver.shouldAttemptIncrementalCompilation()
-    else {
-      return nil
-    }
-
+    let reporter: Reporter?
     if driver.parsedOptions.hasArgument(.driverShowIncremental) || driver.showJobLifecycle {
-      self.reporter = Reporter(diagnosticEngine: driver.diagnosticEngine,
-                               outputFileMap: driver.outputFileMap)
+      reporter = Reporter(diagnosticEngine: driver.diagnosticEngine,
+                          outputFileMap: driver.outputFileMap)
     } else {
-      self.reporter = nil
+      reporter = nil
     }
-
 
     guard let (outputFileMap, buildRecordInfo, outOfDateBuildRecord)
-            = try driver.getBuildInfo(self.reporter)
+            = try driver.getBuildInfo(reporter)
     else {
       return nil
     }
@@ -69,35 +40,99 @@ public class IncrementalCompilationState {
               buildRecordInfo,
               outOfDateBuildRecord,
               outputFileMap,
-              &driver,
-              self.reporter)
+              driver,
+              reporter,
+              options)
     else {
       return nil
     }
 
-    (skippedCompileGroups: self.skippedCompileGroups,
-     mandatoryJobsInOrder: self.mandatoryJobsInOrder) = try Self.computeInputsAndGroups(
+    let (skippedCompileGroups, mandatoryJobsInOrder) = try Self.computeInputsAndGroups(
       jobsInPhases,
-      &driver,
+      driver,
       buildRecordInfo,
       outOfDateBuildRecord,
       inputsHavingMalformedSwiftDeps: inputsHavingMalformedSwiftDeps,
       moduleDependencyGraph,
-      self.reporter)
+      reporter,
+      options)
 
-    self.unfinishedJobs = Set(self.mandatoryJobsInOrder)
-    self.jobsAfterCompiles = jobsInPhases.afterCompiles
-    self.moduleDependencyGraph = moduleDependencyGraph
-    self.driver = driver
+    return IncrementalBuild.Plan(jobsInPhases: jobsInPhases,
+                                 moduleDependencyGraph: moduleDependencyGraph,
+                                 mandatoryJobsInOrder: mandatoryJobsInOrder,
+                                 skippedCompileGroups: skippedCompileGroups,
+                                 reporter: reporter,
+                                 options: options)
   }
+}
 
+extension IncrementalBuild {
+  struct Options: OptionSet {
+    var rawValue: UInt8
 
+    static let showJobLifecycle = Self(rawValue: 1 << 0)
+    static let showIncremental = Self(rawValue: 1 << 1)
+    static let emitDependencyDotFileAfterEveryImport = Self(rawValue: 1 << 2)
+    static let verifyDependencyGraphAfterEveryImport = Self(rawValue: 1 << 3)
+  }
+}
+
+extension IncrementalBuild {
+  struct Plan {
+    private let jobsInPhases: JobsInPhases
+
+    /// The oracle for deciding what depends on what. Applies to this whole module.
+    private let moduleDependencyGraph: ModuleDependencyGraph
+
+    /// All of the pre-compile or compilation job (groups) known to be required (i.e. in 1st wave).
+    /// Already batched, and in order of input files.
+    public let mandatoryJobsInOrder: [Job]
+
+    /// Keyed by primary input. As required compilations are discovered after the first wave, these shrink.
+    private var skippedCompileGroups: [TypedVirtualPath: CompileJobGroup]
+
+    /// If non-null outputs information for `-driver-show-incremental` for input path
+    private let reporter: Reporter?
+
+    private var options: IncrementalBuild.Options
+
+    fileprivate init(
+      jobsInPhases: JobsInPhases,
+      moduleDependencyGraph: ModuleDependencyGraph,
+      mandatoryJobsInOrder: [Job],
+      skippedCompileGroups: [TypedVirtualPath: CompileJobGroup],
+      reporter: IncrementalBuild.Reporter?,
+      options: IncrementalBuild.Options
+    ) {
+      self.jobsInPhases = jobsInPhases
+      self.moduleDependencyGraph = moduleDependencyGraph
+      self.mandatoryJobsInOrder = mandatoryJobsInOrder
+      self.skippedCompileGroups = skippedCompileGroups
+      self.reporter = reporter
+      self.options = options
+    }
+
+    func execute() -> IncrementalCompilationState {
+      let state = IncrementalCompilationState(self)
+      // For compatibility with swiftpm, the driver produces batched jobs
+      // for every job, even when run in incremental mode, so that all jobs
+      // can be returned from `planBuild`.
+      // But in that case, don't emit lifecycle messages.
+      formBatchedJobs(self.jobsInPhases.allJobs,
+                      showJobLifecycle: self.reporter != nil)
+      return
+    }
+  }
+}
+
+extension IncrementalBuild {
   private static func computeModuleDependencyGraph(
     _ buildRecordInfo: BuildRecordInfo,
     _ outOfDateBuildRecord: BuildRecord,
     _ outputFileMap: OutputFileMap,
-    _ driver: inout Driver,
-    _ reporter: Reporter?
+    _ driver: Driver,
+    _ reporter: IncrementalBuild.Reporter?,
+    _ options: IncrementalBuild.Options
   )
   -> (ModuleDependencyGraph, inputsHavingMalformedSwiftDeps: [TypedVirtualPath])?
   {
@@ -108,7 +143,7 @@ public class IncrementalCompilationState {
               inputs: buildRecordInfo.compilationInputModificationDates.keys,
               previousInputs: outOfDateBuildRecord.allInputs,
               outputFileMap: outputFileMap,
-              parsedOptions: &driver.parsedOptions,
+              parsedOptions: options,
               remarkDisabled: Diagnostic.Message.remark_incremental_compilation_has_been_disabled,
               reporter: reporter)
     else {
@@ -130,12 +165,13 @@ public class IncrementalCompilationState {
 
   private static func computeInputsAndGroups(
     _ jobsInPhases: JobsInPhases,
-    _ driver: inout Driver,
+    _ driver: Driver,
     _ buildRecordInfo: BuildRecordInfo,
     _ outOfDateBuildRecord: BuildRecord,
     inputsHavingMalformedSwiftDeps: [TypedVirtualPath],
     _ moduleDependencyGraph: ModuleDependencyGraph,
-    _ reporter: Reporter?
+    _ reporter: IncrementalBuild.Reporter?,
+    _ options: IncrementalBuild.Options
   ) throws -> (skippedCompileGroups: [TypedVirtualPath: CompileJobGroup],
                mandatoryJobsInOrder: [Job])
   {
@@ -174,29 +210,9 @@ public class IncrementalCompilationState {
 }
 
 fileprivate extension Driver {
-  /// Check various arguments to rule out incremental compilation if need be.
-  mutating func shouldAttemptIncrementalCompilation() -> Bool {
-    guard parsedOptions.hasArgument(.incremental) else {
-      return false
-    }
-    guard compilerMode.supportsIncrementalCompilation else {
-      diagnosticEngine.emit(
-        .remark_incremental_compilation_has_been_disabled(
-          because: "it is not compatible with \(compilerMode)"))
-      return false
-    }
-    guard !parsedOptions.hasArgument(.embedBitcode) else {
-      diagnosticEngine.emit(
-        .remark_incremental_compilation_has_been_disabled(
-          because: "is not currently compatible with embedding LLVM IR bitcode"))
-      return false
-    }
-    return true
-  }
-
   /// Decide if an incremental compilation is possible, and return needed values if so.
   func getBuildInfo(
-    _ reporter: IncrementalCompilationState.Reporter?
+    _ reporter: IncrementalBuild.Reporter?
   ) throws -> (OutputFileMap, BuildRecordInfo, BuildRecord)? {
     guard let outputFileMap = outputFileMap
     else {
@@ -241,12 +257,6 @@ extension Diagnostic.Message {
   fileprivate static var warning_incremental_requires_output_file_map: Diagnostic.Message {
     .warning("ignoring -incremental (currently requires an output file map)")
   }
-  static var warning_incremental_requires_build_record_entry: Diagnostic.Message {
-    .warning(
-      "ignoring -incremental; " +
-        "output file map has no master dependencies entry (\"\(FileType.swiftDeps)\" under \"\")"
-    )
-  }
   fileprivate static func remark_disabling_incremental_build(because why: String) -> Diagnostic.Message {
     return .remark("Disabling incremental build: \(why)")
   }
@@ -262,7 +272,7 @@ extension Diagnostic.Message {
 
 // MARK: - Scheduling the first wave, i.e. the mandatory pre- and compile jobs
 
-extension IncrementalCompilationState {
+extension IncrementalBuild {
 
   /// Figure out which compilation inputs are *not* mandatory
   private static func computeSkippedCompilationInputs(
@@ -273,7 +283,7 @@ extension IncrementalCompilationState {
     moduleDependencyGraph: ModuleDependencyGraph,
     outOfDateBuildRecord: BuildRecord,
     alwaysRebuildDependents: Bool,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> Set<TypedVirtualPath> {
     let changedInputs = Self.computeChangedInputs(
         groups: allGroups,
@@ -336,7 +346,7 @@ extension IncrementalCompilationState {
   }
 }
 
-extension IncrementalCompilationState {
+extension IncrementalBuild {
   /// Encapsulates information about an input the driver has determined has
   /// changed in a way that requires an incremental rebuild.
   struct ChangedInput {
@@ -355,7 +365,7 @@ extension IncrementalCompilationState {
     buildRecordInfo: BuildRecordInfo,
     moduleDependencyGraph: ModuleDependencyGraph,
     outOfDateBuildRecord: BuildRecord,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> [ChangedInput] {
     groups.compactMap { group in
       let input = group.primaryInput
@@ -397,7 +407,7 @@ extension IncrementalCompilationState {
     buildTime: Date,
     fileSystem: FileSystem,
     moduleDependencyGraph: ModuleDependencyGraph,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
  ) -> [TypedVirtualPath] {
     var externallyDependentSwiftDeps = Set<ModuleDependencyGraph.SwiftDeps>()
     for extDep in moduleDependencyGraph.externalDependencies {
@@ -431,7 +441,7 @@ extension IncrementalCompilationState {
     inputsMissingOutputs: Set<TypedVirtualPath>,
     moduleDependencyGraph: ModuleDependencyGraph,
     alwaysRebuildDependents: Bool,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> Set<TypedVirtualPath> {
     let cascadingChangedInputs = Self.computeCascadingChangedInputs(from: changedInputs,
                                                                     inputsMissingOutputs: inputsMissingOutputs,
@@ -459,7 +469,7 @@ extension IncrementalCompilationState {
     from changedInputs: [ChangedInput],
     inputsMissingOutputs: Set<TypedVirtualPath>,
     alwaysRebuildDependents: Bool,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> [TypedVirtualPath] {
     changedInputs.compactMap { changedInput in
       let inputIsUpToDate =
@@ -498,150 +508,6 @@ extension IncrementalCompilationState {
           "not scheduling dependents of \(basename): does not need cascading build")
         return nil
       }
-    }
-  }
-}
-
-// MARK: - Scheduling
-extension IncrementalCompilationState {
-  /// Remember a job (group) that is before a compile or a compile itself.
-  /// `job` just finished. Update state, and return the skipped compile job (groups) that are now known to be needed.
-  /// If no more compiles are needed, return nil.
-  /// Careful: job may not be primary.
-
-  public func getJobsDiscoveredToBeNeededAfterFinishing(
-    job finishedJob: Job, result: ProcessResult
-   ) throws -> [Job]? {
-    return try confinementQueue.sync {
-      unfinishedJobs.remove(finishedJob)
-
-      guard case .terminated = result.exitStatus else {
-        return []
-      }
-
-      // Find and deal with inputs that how need to be compiled
-      let discoveredInputs = collectInputsDiscovered(from: finishedJob)
-      assert(Set(discoveredInputs).isDisjoint(with: finishedJob.primaryInputs),
-             "Primaries should not overlap secondaries.")
-
-      if let reporter = self.reporter {
-        for input in discoveredInputs {
-          reporter.report("Queuing because of dependencies discovered later:", path: input)
-        }
-      }
-      let newJobs = try getJobsFor(discoveredCompilationInputs: discoveredInputs)
-      unfinishedJobs.formUnion(newJobs)
-      if unfinishedJobs.isEmpty {
-        // no more compilations are possible
-        return nil
-      }
-      return newJobs
-    }
- }
-
-  /// After `job` finished find out which inputs must compiled that were not known to need compilation before
-  private func collectInputsDiscovered(from job: Job)  -> [TypedVirtualPath] {
-    guard job.kind == .compile else {
-      return []
-    }
-    return Array(
-      Set(
-        job.primaryInputs.flatMap {
-          input -> [TypedVirtualPath] in
-          if let found = moduleDependencyGraph.findSourcesToCompileAfterCompiling(input) {
-            return found
-          }
-          self.reporter?.report("Failed to read some swiftdeps; compiling everything", path: input)
-          return Array(skippedCompileGroups.keys)
-        }
-      )
-      .subtracting(job.primaryInputs) // have already compiled these
-    )
-    .sorted {$0.file.name < $1.file.name}
-  }
-
-  /// Find the jobs that now must be run that were not originally known to be needed.
-  private func getJobsFor(
-    discoveredCompilationInputs inputs: [TypedVirtualPath]
-  ) throws -> [Job] {
-    let unbatched = inputs.flatMap { input -> [Job] in
-      if let group = skippedCompileGroups.removeValue(forKey: input) {
-        let primaryInputs = group.compileJob.primaryInputs
-        assert(primaryInputs.count == 1)
-        assert(primaryInputs[0] == input)
-        self.reporter?.report("Scheduling discovered", path: input)
-        return group.allJobs()
-      }
-      else {
-        self.reporter?.report("Tried to schedule discovered input again", path: input)
-        return []
-      }
-    }
-    return try driver.formBatchedJobs(unbatched, showJobLifecycle: driver.showJobLifecycle)
-  }
-}
-
-// MARK: - After the build
-extension IncrementalCompilationState {
-  var skippedCompilationInputs: Set<TypedVirtualPath> {
-    Set(skippedCompileGroups.keys)
-  }
-  public var skippedJobs: [Job] {
-    skippedCompileGroups.values
-      .sorted {$0.primaryInput.file.name < $1.primaryInput.file.name}
-      .flatMap {$0.allJobs()}
-  }
-}
-
-// MARK: - Remarks
-
-extension IncrementalCompilationState {
-  /// A type that manages the reporting of remarks about the state of the
-  /// incremental build.
-  public struct Reporter {
-    let diagnosticEngine: DiagnosticsEngine
-    let outputFileMap: OutputFileMap?
-
-    /// Report a remark with the given message.
-    ///
-    /// The `path` parameter is used specifically for reporting the state of
-    /// compile jobs that are transiting through the incremental build pipeline.
-    /// If provided, and valid entries in the output file map are provided,
-    /// the reporter will format a message of the form
-    ///
-    /// ```
-    /// <message> {compile: <output> <= <input>}
-    /// ```
-    ///
-    /// Which mirrors the behavior of the legacy driver.
-    ///
-    /// - Parameters:
-    ///   - message: The message to emit in the remark.
-    ///   - path: If non-nil, the path of an output for an incremental job.
-    func report(_ message: String, path: TypedVirtualPath? = nil) {
-      guard let outputFileMap = outputFileMap,
-            let path = path,
-            let input = path.type == .swift ? path.file : outputFileMap.getInput(outputFile: path.file)
-      else {
-        diagnosticEngine.emit(.remark_incremental_compilation(because: message))
-        return
-      }
-      let output = outputFileMap.getOutput(inputFile: path.file, outputType: .object)
-      let compiling = " {compile: \(output.basename) <= \(input.basename)}"
-      diagnosticEngine.emit(.remark_incremental_compilation(because: "\(message) \(compiling)"))
-    }
-
-    // Emits a remark indicating incremental compilation has been disabled.
-    func reportDisablingIncrementalBuild(_ why: String) {
-      report("Disabling incremental build: \(why)")
-    }
-
-    // Emits a remark indicating incremental compilation has been disabled.
-    //
-    // FIXME: This entrypoint exists for compatiblity with the legacy driver.
-    // This message is not necessary, and we should migrate the tests.
-    func reportIncrementalCompilationHasBeenDisabled(_ why: String) {
-      report("Incremental compilation has been disabled, \(why)")
     }
   }
 }

@@ -31,13 +31,13 @@ import SwiftOptions
   
   let verifyDependencyGraphAfterEveryImport: Bool
   let emitDependencyDotFileAfterEveryImport: Bool
-  let reporter: IncrementalCompilationState.Reporter?
+  let reporter: IncrementalBuild.Reporter?
   
   private let diagnosticEngine: DiagnosticsEngine
   
   public init(
     diagnosticEngine: DiagnosticsEngine,
-    reporter: IncrementalCompilationState.Reporter?,
+    reporter: IncrementalBuild.Reporter?,
     emitDependencyDotFileAfterEveryImport: Bool,
     verifyDependencyGraphAfterEveryImport: Bool)
   {
@@ -57,19 +57,17 @@ extension ModuleDependencyGraph {
     inputs: Inputs,
     previousInputs: Set<VirtualPath>,
     outputFileMap: OutputFileMap?,
-    parsedOptions: inout ParsedOptions,
+    parsedOptions: IncrementalBuild.Options,
     remarkDisabled: (String) -> Diagnostic.Message,
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> (ModuleDependencyGraph, inputsWithMalformedSwiftDeps: [(TypedVirtualPath, VirtualPath)])?
   where Inputs.Element == TypedVirtualPath
   {
-    let emitOpt = Option.driverEmitFineGrainedDependencyDotFileAfterEveryImport
-    let veriOpt = Option.driverVerifyFineGrainedDependencyGraphAfterEveryImport
     let graph = Self(
       diagnosticEngine: diagnosticEngine,
       reporter: reporter,
-      emitDependencyDotFileAfterEveryImport: parsedOptions.contains(emitOpt),
-      verifyDependencyGraphAfterEveryImport: parsedOptions.contains(veriOpt))
+      emitDependencyDotFileAfterEveryImport: parsedOptions.contains(.emitDependencyDotFileAfterEveryImport),
+      verifyDependencyGraphAfterEveryImport: parsedOptions.contains(.verifyDependencyGraphAfterEveryImport))
 
     let inputsAndSwiftdeps = inputs.map {input in
       (input, outputFileMap?.existingOutput( inputFile: input.file,

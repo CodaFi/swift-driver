@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 import TSCBasic
+import SwiftOptions
 
 public enum PlanningError: Error, DiagnosticData {
   case replReceivedInput
@@ -70,10 +71,14 @@ struct JobsInPhases {
 
 /// // MARK: Standard build planning
 extension Driver {
+  enum CompilationPlan {
+    case standard
+    case incremental(IncrementalCompilationState)
+  }
+
   /// Plan a standard compilation, which produces jobs for compiling separate
   /// primary files.
-  private mutating func planStandardCompile() throws
-  -> ([Job], IncrementalCompilationState?) {
+  private mutating func planStandardCompile() throws -> CompilationPlan? {
     precondition(compilerMode.isStandardCompilationForPlanning,
                  "compiler mode \(compilerMode) is handled elsewhere")
 
@@ -114,22 +119,58 @@ extension Driver {
       afterCompiles: jobsAfterCompiles
     )
 
-    // Determine the state for incremental compilation
-    let incrementalCompilationState = try IncrementalCompilationState(
-      driver: &self,
-      jobsInPhases: jobsInPhases)
+    guard self.shouldAttemptIncrementalCompilation() else {
+      return .standard
+    }
 
-    return try (
-      // For compatibility with swiftpm, the driver produces batched jobs
-      // for every job, even when run in incremental mode, so that all jobs
-      // can be returned from `planBuild`.
-      // But in that case, don't emit lifecycle messages.
-      formBatchedJobs(jobsInPhases.allJobs,
-                      showJobLifecycle: showJobLifecycle && incrementalCompilationState == nil),
-      incrementalCompilationState
-    )
+    let incrementalPlan = try IncrementalBuild.plan(driver: self,
+                                                    jobsInPhases: jobsInPhases,
+                                                    options: self.computeIncrementalOptions())
+
   }
 
+  /// Check various arguments to rule out incremental compilation if need be.
+  private mutating func shouldAttemptIncrementalCompilation() -> Bool {
+    guard parsedOptions.hasArgument(.incremental) else {
+      return false
+    }
+    guard compilerMode.supportsIncrementalCompilation else {
+      diagnosticEngine.emit(
+        .remark_incremental_compilation_has_been_disabled(
+          because: "it is not compatible with \(compilerMode)"))
+      return false
+    }
+    guard !parsedOptions.hasArgument(.embedBitcode) else {
+      diagnosticEngine.emit(
+        .remark_incremental_compilation_has_been_disabled(
+          because: "is not currently compatible with embedding LLVM IR bitcode"))
+      return false
+    }
+    return true
+  }
+
+  private mutating func computeIncrementalOptions() -> IncrementalBuild.Options {
+    var options: IncrementalBuild.Options = []
+    let emitOpt = Option.driverEmitFineGrainedDependencyDotFileAfterEveryImport
+    if self.parsedOptions.contains(emitOpt) {
+      options.formUnion(.emitDependencyDotFileAfterEveryImport)
+    }
+
+    let veriOpt = Option.driverVerifyFineGrainedDependencyGraphAfterEveryImport
+    if self.parsedOptions.contains(veriOpt) {
+      options.formUnion(.verifyDependencyGraphAfterEveryImport)
+    }
+
+    if self.parsedOptions.hasArgument(.driverShowIncremental) {
+      options.formUnion(.showIncremental)
+    }
+
+    if self.showJobLifecycle {
+      options.formUnion(.showJobLifecycle)
+    }
+
+    return options
+  }
 
   private mutating func addPrecompileModuleDependenciesJobs(addJob: (Job) -> Void) throws {
     // If asked, add jobs to precompile module dependencies

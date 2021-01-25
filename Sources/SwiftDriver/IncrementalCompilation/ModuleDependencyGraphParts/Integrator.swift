@@ -59,7 +59,7 @@ extension ModuleDependencyGraph.Integrator {
     swiftDeps: Graph.SwiftDeps,
     into destination: Graph,
     input: TypedVirtualPath,
-    reporter: IncrementalCompilationState.Reporter?,
+    reporter: IncrementalBuild.Reporter?,
     diagnosticEngine: DiagnosticsEngine
   ) -> Changes? {
     guard let sfdg = try? SourceFileDependencyGraph.read(

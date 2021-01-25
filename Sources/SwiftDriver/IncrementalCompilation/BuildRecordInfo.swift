@@ -170,7 +170,7 @@ final class BuildRecordInfo {
 // TODO: Incremental too many names, buildRecord BuildRecord outofdatemap
   func populateOutOfDateBuildRecord(
     inputFiles: [TypedVirtualPath],
-    reporter: IncrementalCompilationState.Reporter?
+    reporter: IncrementalBuild.Reporter?
   ) -> BuildRecord? {
     let contents: String
     do {
@@ -219,5 +219,14 @@ final class BuildRecordInfo {
 fileprivate extension AbsolutePath {
   func withTilde() -> Self {
     parentDirectory.appending(component: basename + "~")
+  }
+}
+
+extension Diagnostic.Message {
+  static var warning_incremental_requires_build_record_entry: Diagnostic.Message {
+    .warning(
+      "ignoring -incremental; " +
+        "output file map has no master dependencies entry (\"\(FileType.swiftDeps)\" under \"\")"
+    )
   }
 }
