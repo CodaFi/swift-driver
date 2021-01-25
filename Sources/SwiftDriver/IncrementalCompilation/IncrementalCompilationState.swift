@@ -280,7 +280,6 @@ extension IncrementalCompilationState {
         buildRecordInfo: buildRecordInfo,
         moduleDependencyGraph: moduleDependencyGraph,
         outOfDateBuildRecord: outOfDateBuildRecord,
-        fileSystem: fileSystem,
         reporter: reporter)
 
     let externalDependents = computeExternallyDependentInputs(
@@ -356,7 +355,6 @@ extension IncrementalCompilationState {
     buildRecordInfo: BuildRecordInfo,
     moduleDependencyGraph: ModuleDependencyGraph,
     outOfDateBuildRecord: BuildRecord,
-    fileSystem: FileSystem,
     reporter: IncrementalCompilationState.Reporter?
   ) -> [ChangedInput] {
     groups.compactMap { group in
