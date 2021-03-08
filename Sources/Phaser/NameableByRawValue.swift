@@ -11,10 +11,6 @@
 //===----------------------------------------------------------------------===//
 
 /// String raw values are used as names for source files and modules.
-/// (See `TestProtocol`.)
-protocol NameableByRawValue: RawRepresentable where RawValue == String {
-}
+/// (See `PhasedTest`.)
+public protocol NameableByRawValue: RawRepresentable where RawValue == String {}
 
-extension NameableByRawValue {
-  var name: String {rawValue}
-}

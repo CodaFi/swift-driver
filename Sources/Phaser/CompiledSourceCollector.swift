@@ -17,7 +17,7 @@ import SwiftOptions
 import TestUtilities
 
 /// Creates a `DiagnosticsEngine` that collects which sources were compiled.
-/// (See `TestProtocol`.)
+/// (See `PhasedTest`.)
 struct CompiledSourceCollector {
   private var collectedCompiledSources = [String]()
 
@@ -43,8 +43,7 @@ struct CompiledSourceCollector {
 
   func compiledSources(_ context: TestContext) ->  [String] {
     XCTAssertEqual(Set(collectedCompiledSources).count, collectedCompiledSources.count,
-                   "No file should be compiled twice",
-                   file: context.testFile, line: context.testLine)
+                   "No file should be compiled twice")
     return collectedCompiledSources
   }
 }

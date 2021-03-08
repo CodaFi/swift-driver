@@ -16,24 +16,22 @@ import SwiftOptions
 import TestUtilities
 
 /// Everything needed to invoke the driver and build a module.
-/// (See `TestProtocol`.)
-struct BuildJob<Module: ModuleProtocol> {
-  typealias SourceVersion = Module.SourceVersion
-
-  /// The module to be compiled
-  let module: Module
-
-  /// The source versions to be compiled. Can vary.
-  let sourceVersions: [SourceVersion]
-
-  init(_ module: Module, _ sourceVersions: [SourceVersion]) {
-    self.module = module
-    self.sourceVersions = sourceVersions
+/// (See `PhasedTest`.)
+struct BuildJob {
+  enum Product {
+    case library
+    case executable
   }
+  var moduleName: String
+  var sources: [String]
+  var imports: [String]
+  var product: Product
 
-  /// Update the contents of the source files.
-  func updateChangedSources(_ context: TestContext) {
-    sourceVersions.forEach {$0.updateIfChanged(context)}
+  init<State: PhaseState>(module: Expectation<State>.ProtoModule, in phase: State) {
+    self.moduleName = module.name
+    self.sources = module.sourceFileNames(in: phase)
+    self.imports = module.imports
+    self.product = module.product
   }
 
   /// Returns the basenames without extension of the compiled source files.
@@ -45,8 +43,7 @@ struct BuildJob<Module: ModuleProtocol> {
     let handlers = [
         {collector.handle(diagnostic: $0)},
         context.verbose ? Driver.stderrDiagnosticsHandler : nil
-      ]
-      .compactMap {$0}
+    ].compactMap { $0 }
     let diagnosticsEngine = DiagnosticsEngine(handlers: handlers)
 
     var driver = try! Driver(args: allArgs, diagnosticsEngine: diagnosticsEngine)
@@ -58,29 +55,36 @@ struct BuildJob<Module: ModuleProtocol> {
 
   private func writeOFM(_ context: TestContext) {
     OutputFileMapCreator.write(
-      module: module.name,
-      inputPaths: sourceVersions.map {$0.path(context)},
-      derivedData: module.derivedDataPath(context),
-      to: module.outputFileMapPath(context))
+      module: self.moduleName,
+      inputPaths: self.sources.map { context.swiftFilePath(for: $0) },
+      derivedData: context.buildRoot(for: self.moduleName),
+      to: context.outputFileMapPath(for: self.moduleName))
   }
 
   func arguments(_ context: TestContext) -> [String] {
     var libraryArgs: [String] {
-      ["-parse-as-library",
-       "-emit-module-path", module.swiftmodulePath(context).pathString]
+      [
+        "-parse-as-library",
+        "-emit-module-path", context.swiftmodulePath(for: self.moduleName).pathString,
+      ]
     }
+
     var appArgs: [String] {
-      let swiftModules = module.imports .map {
-        $0.swiftmodulePath(context).parentDirectory.pathString
+      let swiftModules = self.imports.map {
+        context.swiftmodulePath(for: $0).parentDirectory.pathString
       }
       return swiftModules.flatMap { ["-I", $0, "-F", $0] }
     }
+
     var incrementalImportsArgs: [String] {
-      // ["-\(withIncrementalImports ? "en" : "dis")able-incremental-imports"]
-      context.withIncrementalImports
-        ? [ "-enable-incremental-imports"]
-        : ["-disable-incremental-imports"]
+      switch context.incrementalImports {
+      case .enabled:
+        return ["-enable-incremental-imports"]
+      case .disabled:
+        return ["-disable-incremental-imports"]
+      }
     }
+
     return Array(
     [
       [
@@ -90,12 +94,12 @@ struct BuildJob<Module: ModuleProtocol> {
         "-driver-show-incremental",
         "-driver-show-job-lifecycle",
         "-c",
-        "-module-name", module.nameToImport,
-        "-output-file-map", module.outputFileMapPath(context).pathString,
+        "-module-name", self.moduleName,
+        "-output-file-map", context.outputFileMapPath(for: self.moduleName).pathString,
       ],
       incrementalImportsArgs,
-      module.isLibrary ? libraryArgs : appArgs,
-      sourceVersions.map {$0.path(context).pathString}
+      self.product == .library ? libraryArgs : appArgs,
+      sources.map { context.swiftFilePath(for: $0).pathString }
     ].joined())
   }
 }
