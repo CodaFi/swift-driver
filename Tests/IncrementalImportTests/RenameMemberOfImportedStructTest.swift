@@ -28,24 +28,31 @@ class RenameMemberOfImportedStructTest: XCTestCase {
   /// Change the name of a member of an imported struct.
   /// Ensure that only the users get rebuilt
   struct RenameMemberOfImportedStruct: PhasedTest {
-    enum Phases: String, CaseIterable, PhaseState {
+    enum Phases: String, CaseIterable, TestPhase {
       case initial
       case renamed
+    }
 
-      var expectations: [Expectation<Self>] {
-        switch self {
-        case .initial:
-          return [
-            .building(ImportedModule.self).rebuildsEverything(),
-            .building(MainModule.self).rebuildsEverything(),
-          ]
-        case .renamed:
-          return [
-            .building(ImportedModule.self).rebuildsEverything(),
-            .building(MainModule.self).rebuilds(withIncrementalImports: .main,
-                                                withoutIncrementalImports: .main, .otherFile),
-          ]
-        }
+    static func setup() -> [Expectation<Phases>] {
+      [
+        .building(ImportedModule.self).rebuildsEverything(),
+        .building(MainModule.self).rebuildsEverything(),
+      ]
+    }
+
+    static func testTransition(from: Phases, to: Phases) -> [Expectation<Phases>] {
+      switch (from, to){
+      case (.initial, .initial), (.renamed, .renamed):
+        return [
+          .building(ImportedModule.self).rebuildsNothing(),
+          .building(MainModule.self).rebuildsNothing(),
+        ]
+      case (.initial, .renamed), (.renamed, .initial):
+        return [
+          .building(ImportedModule.self).rebuildsEverything(),
+          .building(MainModule.self).rebuilds(withIncrementalImports: .main,
+                                              withoutIncrementalImports: .main, .otherFile),
+        ]
       }
     }
   }
@@ -55,7 +62,7 @@ class RenameMemberOfImportedStructTest: XCTestCase {
 
     static var name: String { "main" }
     static var imports: [String] { [ ImportedModule.name ] }
-    static var isLibrary: Bool { false }
+    static var product: PhasedModuleProduct { .executable }
 
     enum Sources: String, NameableByRawValue, CaseIterable {
       case main, otherFile
@@ -83,7 +90,7 @@ class RenameMemberOfImportedStructTest: XCTestCase {
 
     static var name: String { "imported" }
     static var imports: [String] { [] }
-    static var isLibrary: Bool { true }
+    static var product: PhasedModuleProduct { .library }
 
 
     enum Sources: String, NameableByRawValue, CaseIterable {

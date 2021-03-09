@@ -16,18 +16,15 @@ import SwiftOptions
 import TestUtilities
 
 /// Everything needed to invoke the driver and build a module.
-/// (See `PhasedTest`.)
+///
+/// - seealso: PhasedTest
 struct BuildJob {
-  enum Product {
-    case library
-    case executable
-  }
   var moduleName: String
   var sources: [String]
   var imports: [String]
-  var product: Product
+  var product: PhasedModuleProduct
 
-  init<State: PhaseState>(module: Expectation<State>.ProtoModule, in phase: State) {
+  init<State: TestPhase>(module: Expectation<State>.ProtoModule, in phase: State) {
     self.moduleName = module.name
     self.sources = module.sourceFileNames(in: phase)
     self.imports = module.imports
@@ -56,7 +53,7 @@ struct BuildJob {
   private func writeOFM(_ context: TestContext) {
     OutputFileMapCreator.write(
       module: self.moduleName,
-      inputPaths: self.sources.map { context.swiftFilePath(for: $0) },
+      inputPaths: self.sources.map { context.swiftFilePath(for: $0, in: self.moduleName) },
       derivedData: context.buildRoot(for: self.moduleName),
       to: context.outputFileMapPath(for: self.moduleName))
   }
@@ -99,7 +96,7 @@ struct BuildJob {
       ],
       incrementalImportsArgs,
       self.product == .library ? libraryArgs : appArgs,
-      sources.map { context.swiftFilePath(for: $0).pathString }
+      sources.map { context.swiftFilePath(for: $0, in: self.moduleName).pathString }
     ].joined())
   }
 }

@@ -17,63 +17,119 @@ import SwiftOptions
 
 import Phaser
 
+
 class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
   func testHideAndShowFuncInStruct() throws {
-    try HideAndShowFuncInStruct.test(verbose: false)
+    try HideAndShowFunc<InStruct>.test(verbose: false)
   }
   func testHideAndShowFuncInExtension() throws {
-    try HideAndShowFuncInExtension.test(verbose: false)
+    try HideAndShowFunc<InExtension>.test(verbose: false)
   }
 
-  struct HideAndShowFuncInStruct: PhasedTest {
-    typealias Phases = HideAndShowFuncInStructAndExtensionTests.Phases
-  }
+  enum InStruct {}
+  enum InExtension {}
 
-  struct HideAndShowFuncInExtension: PhasedTest {
-    typealias Phases = HideAndShowFuncInStructAndExtensionTests.Phases
-  }
+  struct HideAndShowFunc<T>: PhasedTest {
+    enum Phases: String, CaseIterable, TestPhase {
+      case bothHidden
+      case shown
+      case bothShown
+    }
 
-  enum Phases: String, CaseIterable, PhaseState {
-    case bothHidden
-    case shownInStruct
-    case shownInExtension
-    case bothShown
+    static func setup() -> [Expectation<Phases>] {
+      [
+        .building(ImportedModule<T>.self).rebuildsEverything(),
+        .building(MainModule<T>.self).rebuildsEverything(),
+      ]
+    }
 
-    var expectations: [Expectation<Self>] {
-      switch self {
-      case .bothHidden:
+    static var transitioner: [Phases] {
+      precondition(T.self == InStruct.self || T.self == InExtension.self)
+      return [
+        .bothHidden,
+        .shown,
+        .bothShown,
+        .bothHidden,
+      ]
+    }
+
+    static func testTransition(from: Phases, to: Phases) -> [Expectation<Phases>] {
+      switch (from, to) {
+      case (.bothHidden, .bothHidden), (.shown, .shown), (.bothShown, .bothShown):
         return [
-          .building(ImportedModule.self).rebuildsEverything(),
-          .building(MainModule.self).rebuildsEverything(),
+          .building(ImportedModule.self).rebuildsNothing(),
+          .building(MainModule.self).rebuildsNothing(),
         ]
-      case .shownInStruct:
+      case (.bothHidden, .shown), (.bothShown, .shown):
+        if T.self == InStruct.self {
+          return [
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else if T.self == InExtension.self {
+          return [
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else {
+          fatalError("Unexpected modality!")
+        }
+      case (.shown, .bothHidden):
         return [
           .building(ImportedModule.self).rebuildsEverything(),
           .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
                                               withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
         ]
-      case .shownInExtension:
+      case (.shown, .bothShown):
+        if T.self == InStruct.self {
         return [
-          .building(ImportedModule.self).rebuildsEverything(),
-          .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
-                                              withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
-        ]
-      case .bothShown:
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else if T.self == InExtension.self {
+          return [
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else {
+          fatalError("Unexpected modality!")
+        }
+      case (.bothShown, .bothHidden):
         return [
-          .building(ImportedModule.self).rebuildsEverything(),
-          .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
-                                              withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          .building(ImportedModule<T>.self).rebuildsEverything(),
+          .building(MainModule<T>.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
+                                                 withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
         ]
+      case (.bothHidden, .bothShown):
+        if T.self == InStruct.self {
+          return [
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else if T.self == InExtension.self {
+          return [
+            .building(ImportedModule.self).rebuildsEverything(),
+            .building(MainModule.self).rebuilds(withIncrementalImports: .main, .callsFuncInExtension, .instantiatesS,
+                                                withoutIncrementalImports: .main, .noUseOfS, .callsFuncInExtension, .instantiatesS),
+          ]
+        } else {
+          fatalError("Unexpected modality!")
+        }
       }
     }
   }
 
-  enum MainModule: PhasedModule {
-    typealias Phases = HideAndShowFuncInStructAndExtensionTests.Phases
+  enum MainModule<T>: PhasedModule {
+    typealias Phases = HideAndShowFunc<T>.Phases
 
     static var name: String { "main" }
-    static var imports: [String] { [ ImportedModule.name ] }
-    static var isLibrary: Bool { return false }
+    static var imports: [String] { [ ImportedModule<T>.name ] }
+    static var product: PhasedModuleProduct { .executable }
 
     enum Sources: String, CaseIterable, NameableByRawValue {
       case main
@@ -87,7 +143,7 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
         .named(.main)
           .in(phases: Phases.allCases) {
              """
-             import \(ImportedModule.name)
+             import \(ImportedModule<T>.name)
              extension S {
                static func inStruct<I: SignedInteger>(_ si: I) {
                  print("1: not public")
@@ -102,21 +158,21 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
         .named(.noUseOfS)
           .in(phases: Phases.allCases) {
             """
-            import \(ImportedModule.name)
+            import \(ImportedModule<T>.name)
             func baz() { T.bar("asdf") }
             """
           },
         .named(.callsFuncInExtension)
           .in(phases: Phases.allCases) {
             """
-            import \(ImportedModule.name)
+            import \(ImportedModule<T>.name)
             func fred() { S.inExtension(3) }
             """
           },
         .named(.instantiatesS)
           .in(phases: Phases.allCases) {
             """
-            import \(ImportedModule.name)
+            import \(ImportedModule<T>.name)
             func late() { _ = S() }
             """
           },
@@ -124,12 +180,12 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
     }
   }
 
-  enum ImportedModule: PhasedModule {
-    typealias Phases = HideAndShowFuncInStructAndExtensionTests.Phases
+  enum ImportedModule<T>: PhasedModule {
+    typealias Phases = HideAndShowFunc<T>.Phases
 
     static var name: String { "imported" }
     static var imports: [String] { [] }
-    static var isLibrary: Bool { return true }
+    static var product: PhasedModuleProduct { .library }
 
     enum Sources: String, CaseIterable, NameableByRawValue {
       case imported
@@ -157,62 +213,65 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
             }
             """
           }
-          .in(.shownInStruct) {
-               """
-               public protocol PP {}
-               public struct S: PP {
-                 public init() {}
-                 public // was uncommented out; should rebuild users of inStruct
-                 static func inStruct(_ i: Int) {print("1: private")}
-                 func fo() {}
-               }
-               public struct T {
-                 public init() {}
-                 public static func bar(_ s: String) {print(s)}
-               }
-               extension S {
-                 // public
-                 static func inExtension(_ i: Int) {print("2: private")}
-               }
-               """
-          }
-          .in(.shownInExtension) {
-               """
-               public protocol PP {}
-               public struct S: PP {
-                 public init() {}
-                 // public // was commented out; should rebuild users of inStruct
-                 static func inStruct(_ i: Int) {print("1: private")}
-                 func fo() {}
-               }
-               public struct T {
-                 public init() {}
-                 public static func bar(_ s: String) {print(s)}
-               }
-               extension S {
-                 public
-                 static func inExtension(_ i: Int) {print("2: private")}
-               }
-               """
+          .in(.shown) {
+            if T.self == InStruct.self {
+              return """
+                     public protocol PP {}
+                     public struct S: PP {
+                       public init() {}
+                       public // was uncommented out; should rebuild users of inStruct
+                       static func inStruct(_ i: Int) {print("1: private")}
+                       func fo() {}
+                     }
+                     public struct T {
+                       public init() {}
+                       public static func bar(_ s: String) {print(s)}
+                     }
+                     extension S {
+                       // public
+                       static func inExtension(_ i: Int) {print("2: private")}
+                     }
+                     """
+            } else if T.self == InExtension.self {
+              return """
+                     public protocol PP {}
+                     public struct S: PP {
+                       public init() {}
+                       // public // was commented out; should rebuild users of inStruct
+                       static func inStruct(_ i: Int) {print("1: private")}
+                       func fo() {}
+                     }
+                     public struct T {
+                       public init() {}
+                       public static func bar(_ s: String) {print(s)}
+                     }
+                     extension S {
+                       public
+                       static func inExtension(_ i: Int) {print("2: private")}
+                     }
+                     """
+            } else {
+              fatalError("Unknown Mutation Type \(T.self)")
+            }
           }
           .in(.bothShown) {
-               """
-               public protocol PP {}
-               public struct S: PP {
-                 public init() {}
-                 public
-                 static func inStruct(_ i: Int) {print("1: private")}
-                 func fo() {}
-               }
-               public struct T {
-                 public init() {}
-                 public static func bar(_ s: String) {print(s)}
-               }
-               extension S {
-                 public  // was uncommented; should rebuild users of inExtension
-                 static func inExtension(_ i: Int) {print("2: private")}
-               }
-               """
+             """
+             public protocol PP {}
+             public struct S: PP {
+               public init() {}
+               public
+               static func inStruct(_ i: Int) {print("1: private")}
+               func fo() {}
+             }
+             public struct T {
+               public init() {}
+               public static func bar(_ s: String) {print(s)}
+             }
+             extension S {
+               public  // was uncommented; should rebuild users of inExtension
+               static func inExtension(_ i: Int) {print("2: private")}
+             }
+             """
           },
       ]
     }

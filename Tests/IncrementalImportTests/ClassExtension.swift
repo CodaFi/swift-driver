@@ -25,31 +25,40 @@ class ClassExtensionTest: XCTestCase {
   }
 
   struct Test: PhasedTest {
-    enum Phases: String, CaseIterable, PhaseState {
+    enum Phases: String, CaseIterable, TestPhase {
       case withFunc
       case withoutFunc
-      case withFunc2
+    }
 
-      var expectations: [Expectation<Self>] {
-        switch self {
-        case .withFunc:
-          return [
-            .building(ImportedModule.self).rebuildsEverything(),
-            .building(MainModule.self).rebuildsEverything(),
-          ]
-        case .withoutFunc:
-          return [
-            .building(ImportedModule.self).rebuilds(withIncrementalImports: .structExtension, .classExtension,
-                                                    withoutIncrementalImports: .structExtension, .classExtension),
-            .building(MainModule.self).rebuilds(withoutIncrementalImports: .structUser, .classUser),
-          ]
-        case .withFunc2:
-          return [
-            .building(ImportedModule.self).rebuilds(withIncrementalImports: .structExtension, .classExtension,
-                                                    withoutIncrementalImports: .structExtension, .classExtension),
-            .building(MainModule.self).rebuilds(withoutIncrementalImports: .structUser, .classUser),
-          ]
-        }
+    static var transitioner: [Phases] {
+      [
+        .withFunc,
+        .withoutFunc,
+        .withFunc,
+        .withoutFunc,
+      ]
+    }
+
+    static func setup() -> [Expectation<Phases>] {
+      [
+        .building(ImportedModule.self).rebuildsEverything(),
+        .building(MainModule.self).rebuildsEverything(),
+      ]
+    }
+
+    static func testTransition(from: Phases, to: Phases) -> [Expectation<Phases>] {
+      switch (from, to) {
+      case (.withFunc, .withFunc), (.withoutFunc, .withoutFunc):
+        return [
+          .building(ImportedModule.self).rebuildsNothing(),
+          .building(MainModule.self).rebuildsNothing(),
+        ]
+      case (.withFunc, .withoutFunc), (.withoutFunc, .withFunc):
+        return [
+          .building(ImportedModule.self).rebuilds(withIncrementalImports: .structExtension, .classExtension,
+                                                  withoutIncrementalImports: .structExtension, .classExtension),
+          .building(MainModule.self).rebuilds(withoutIncrementalImports: .structUser, .classUser),
+        ]
       }
     }
 
@@ -62,9 +71,7 @@ class ClassExtensionTest: XCTestCase {
         return [ ImportedModule.name ]
       }
 
-      static var isLibrary: Bool {
-        return false
-      }
+      static var product: PhasedModuleProduct { .executable }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case structUser, classUser
@@ -80,7 +87,6 @@ class ClassExtensionTest: XCTestCase {
             .in(phases: Phases.allCases) {
               "import \(ImportedModule.name); func cu() {_ = C()}"
             },
-
         ]
       }
     }
@@ -92,9 +98,7 @@ class ClassExtensionTest: XCTestCase {
       static var imports: [String] {
         return []
       }
-      static var isLibrary: Bool {
-        return true
-      }
+      static var product: PhasedModuleProduct { .library }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case definer, structExtension, classExtension
@@ -115,9 +119,6 @@ class ClassExtensionTest: XCTestCase {
             }
             .in(.withoutFunc) {
               "public extension S {}"
-            }
-            .in(.withFunc2) {
-              "public extension S { func foo() {} }"
             },
           .named(.classExtension)
             .in(.withFunc) {
@@ -126,9 +127,6 @@ class ClassExtensionTest: XCTestCase {
             .in(.withoutFunc) {
               "public extension C {}"
             }
-            .in(.withFunc2) {
-              "public extension C { func foo() {} }"
-            },
         ]
       }
     }

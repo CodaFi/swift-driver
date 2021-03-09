@@ -13,8 +13,9 @@ import XCTest
 import TSCBasic
 
 /// What is supposed to be recompiled when taking a step.
-/// (See `PhasedTest`.)
-public struct Expectation<Phases: PhaseState> {
+///
+/// - seealso: PhasedTest
+public struct Expectation<Phases: TestPhase> {
   let module: ProtoModule
 
   /// Expected when incremental imports are enabled
@@ -30,7 +31,7 @@ public struct Expectation<Phases: PhaseState> {
     module: String,
     sourceGenerator: @escaping (Phases) -> [(String, String?)],
     imports: [String],
-    product: BuildJob.Product,
+    product: PhasedModuleProduct,
     with: [String], without: [String],
     file: StaticString,
     line: UInt
@@ -87,7 +88,7 @@ extension Expectation {
     let name: String
     let sourceGenerator: (Phases) -> [(String, String?)]
     let imports: [String]
-    let product: BuildJob.Product
+    let product: PhasedModuleProduct
   }
 }
 
@@ -116,33 +117,78 @@ public struct ModuleExpectation<Module: PhasedModule> {
   public let name: String
   public let sourceGenerator: (Module.Phases) -> [(String, String?)]
 
+  /// Returns an expectation that succeeds when every file in the module
+  /// rebuilds, and fails when any file in the module is skipped.
+  ///
+  /// This expectation is often useful for the initial phase and for any
+  /// transitions that invalidate entire modules, such as when the incremental
+  /// imports are disabled.
   public func rebuildsEverything(
     file: StaticString = #file,
     line: UInt = #line
   ) -> Expectation<Module.Phases> {
-    return Expectation(module: self.name,
-                       sourceGenerator: self.sourceGenerator,
-                       imports: Module.imports,
-                       product: Module.isLibrary ? .library : .executable,
-                       with: Module.sources.map { $0.fileName },
-                       without: Module.sources.map { $0.fileName },
-                       file: file,
-                       line: line)
+    return .init(module: self.name,
+                 sourceGenerator: self.sourceGenerator,
+                 imports: Module.imports,
+                 product: Module.product,
+                 with: Module.sources.map { $0.fileName },
+                 without: Module.sources.map { $0.fileName },
+                 file: file,
+                 line: line)
   }
 
+  /// Returns an expectation that succeeds when every file in the module is
+  /// skipped, and fails when any file in the module builds.
+  ///
+  /// This expectation is often useful for same-state transitions.
+  public func rebuildsNothing(
+    file: StaticString = #file,
+    line: UInt = #line
+  ) -> Expectation<Module.Phases> {
+    return .init(module: self.name,
+                 sourceGenerator: self.sourceGenerator,
+                 imports: Module.imports,
+                 product: Module.product,
+                 with: [],
+                 without: [],
+                 file: file,
+                 line: line)
+  }
+
+  /// Returns an expectation that succeeds when the given files rebuild, and
+  /// fails if the actual module build contains files that are outside of the
+  /// given set of sources.
+  ///
+  /// The order and uniqueness of sources is not important.
   public func rebuilds(
     withIncrementalImports: Module.Sources...,
     withoutIncrementalImports: Module.Sources...,
     file: StaticString = #file,
     line: UInt = #line
   ) -> Expectation<Module.Phases> {
-    return Expectation(module: self.name,
-                       sourceGenerator: self.sourceGenerator,
-                       imports: Module.imports,
-                       product: Module.isLibrary ? .library : .executable,
-                       with: withIncrementalImports.map { $0.rawValue },
-                       without: withoutIncrementalImports.map { $0.rawValue },
-                       file: file,
-                       line: line)
+    return self.rebuilds(withIncrementalImports: withIncrementalImports,
+                         withoutIncrementalImports: withoutIncrementalImports,
+                         file: file, line: line)
+  }
+
+  /// Returns an expectation that succeeds when the given files rebuild, and
+  /// fails if the actual module build contains files that are outside of the
+  /// given set of sources.
+  ///
+  /// The order and uniqueness of sources is not important.
+  public func rebuilds(
+    withIncrementalImports: [Module.Sources],
+    withoutIncrementalImports: [Module.Sources],
+    file: StaticString = #file,
+    line: UInt = #line
+  ) -> Expectation<Module.Phases> {
+    return .init(module: self.name,
+                 sourceGenerator: self.sourceGenerator,
+                 imports: Module.imports,
+                 product: Module.product,
+                 with: withIncrementalImports.map { $0.rawValue },
+                 without: withoutIncrementalImports.map { $0.rawValue },
+                 file: file,
+                 line: line)
   }
 }

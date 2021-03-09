@@ -21,23 +21,29 @@ class ExtensionChangeWithinModuleTests: XCTestCase {
     try ExtensionChange.test(verbose: false)
   }
 
-
   struct ExtensionChange: PhasedTest {
-    enum Phases: String, CaseIterable, PhaseState {
+    enum Phases: String, CaseIterable, TestPhase {
       case noFunc, withFunc
+    }
 
-      var expectations: [Expectation<Phases>] {
-        switch self {
-        case .noFunc:
-          return [
-            .building(Module.self).rebuildsEverything(),
-          ]
-        case .withFunc:
-          return [
-            .building(Module.self).rebuilds(withIncrementalImports: .main, .noFunc,
-                                            withoutIncrementalImports: .main, .noFunc),
-          ]
-        }
+
+    static func setup() -> [Expectation<Phases>] {
+      [
+        .building(Module.self).rebuildsEverything(),
+      ]
+    }
+
+    static func testTransition(from: Phases, to: Phases) -> [Expectation<Phases>] {
+      switch (from, to) {
+      case (.noFunc, .withFunc), (.withFunc, .noFunc):
+        return [
+          .building(Module.self).rebuilds(withIncrementalImports: .main, .noFunc,
+                                          withoutIncrementalImports: .main, .noFunc),
+        ]
+      case (.noFunc, .noFunc), (.withFunc, .withFunc):
+        return [
+          .building(Module.self).rebuildsNothing(),
+        ]
       }
     }
 
@@ -46,7 +52,7 @@ class ExtensionChangeWithinModuleTests: XCTestCase {
 
       static var name: String { "mainM" }
       static var imports: [String] { return [] }
-      static var isLibrary: Bool { false }
+      static var product: PhasedModuleProduct { .executable }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case main, noFunc, userOfT, instantiator

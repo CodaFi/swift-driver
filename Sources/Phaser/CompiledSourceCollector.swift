@@ -17,7 +17,8 @@ import SwiftOptions
 import TestUtilities
 
 /// Creates a `DiagnosticsEngine` that collects which sources were compiled.
-/// (See `PhasedTest`.)
+///
+/// - seealso: PhasedTest
 struct CompiledSourceCollector {
   private var collectedCompiledSources = [String]()
 

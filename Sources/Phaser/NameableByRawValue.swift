@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 /// String raw values are used as names for source files and modules.
-/// (See `PhasedTest`.)
+///
+/// - seealso: PhasedTest
 public protocol NameableByRawValue: RawRepresentable where RawValue == String {}
 
