@@ -51,8 +51,8 @@ class ExtensionChangeWithinModuleTests: XCTestCase {
       typealias Phases = ExtensionChange.Phases
 
       static var name: String { "mainM" }
-      static var imports: [String] { return [] }
-      static var product: PhasedModuleProduct { .executable }
+      static var imports: [Import] { return [] }
+      static var product: ModuleProduct { .executable }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case main, noFunc, userOfT, instantiator

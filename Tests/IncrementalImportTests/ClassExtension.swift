@@ -67,11 +67,11 @@ class ClassExtensionTest: XCTestCase {
 
       static var name: String { "main" }
 
-      static var imports: [String] {
-        return [ ImportedModule.name ]
+      static var imports: [Import] {
+        return [ Import(ImportedModule.self) ]
       }
 
-      static var product: PhasedModuleProduct { .executable }
+      static var product: ModuleProduct { .executable }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case structUser, classUser
@@ -95,10 +95,10 @@ class ClassExtensionTest: XCTestCase {
       typealias Phases = Test.Phases
 
       static var name: String { "imported" }
-      static var imports: [String] {
+      static var imports: [Import] {
         return []
       }
-      static var product: PhasedModuleProduct { .library }
+      static var product: ModuleProduct { .library }
 
       enum Sources: String, NameableByRawValue, CaseIterable {
         case definer, structExtension, classExtension

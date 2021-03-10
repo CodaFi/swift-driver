@@ -21,8 +21,8 @@ import TestUtilities
 struct BuildJob {
   var moduleName: String
   var sources: [String]
-  var imports: [String]
-  var product: PhasedModuleProduct
+  var imports: [Import]
+  var product: ModuleProduct
 
   init<State: TestPhase>(module: Expectation<State>.ProtoModule, in phase: State) {
     self.moduleName = module.name
@@ -68,7 +68,7 @@ struct BuildJob {
 
     var appArgs: [String] {
       let swiftModules = self.imports.map {
-        context.swiftmodulePath(for: $0).parentDirectory.pathString
+        context.swiftmodulePath(for: $0.importName).parentDirectory.pathString
       }
       return swiftModules.flatMap { ["-I", $0, "-F", $0] }
     }

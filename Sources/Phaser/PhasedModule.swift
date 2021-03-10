@@ -88,17 +88,28 @@ public protocol PhasedModule: CaseIterable {
   /// The modules imported by this module, if any.
   ///
   /// Used to provide search paths for the build command for this module.
-  static var imports: [String] { get }
+  static var imports: [Import] { get }
 
   /// The product of the build of this phased module.
-  static var product: PhasedModuleProduct { get }
+  static var product: ModuleProduct { get }
 
   /// The phase-dependent set of source files in this module.
   static var sources: [SourceFile<Self>] { get }
 }
 
+/// An `Import` captures the data necessary to import a module.
+public struct Import {
+  /// The name of the module to import.
+  let importName: String
+
+  /// Constructs an `Import` from the given phased module metatype.
+  ///
+  /// - Parameter m: The module to import.
+  public init<T: PhasedModule>(_ m: T.Type) { self.importName = m.name }
+}
+
 /// Enumerates the kinds of products that building phased modules may result in.
-public enum PhasedModuleProduct {
+public enum ModuleProduct {
   /// The build produces a library that can be consumed by other modules.
   case library
   /// The build produces an executable.

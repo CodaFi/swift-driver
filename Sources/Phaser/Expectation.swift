@@ -30,16 +30,16 @@ public struct Expectation<Phases: TestPhase> {
   fileprivate init(
     module: String,
     sourceGenerator: @escaping (Phases) -> [(String, String?)],
-    imports: [String],
-    product: PhasedModuleProduct,
+    imports: [Import],
+    product: ModuleProduct,
     with: [String], without: [String],
     file: StaticString,
     line: UInt
   ) {
     self.module = ProtoModule(name: module,
-                            sourceGenerator: sourceGenerator,
-                            imports: imports,
-                            product: product)
+                              sourceGenerator: sourceGenerator,
+                              imports: imports,
+                              product: product)
     self.withIncrementalImports = with
     self.withoutIncrementalImports = without
     self.file = file
@@ -87,8 +87,8 @@ extension Expectation {
   struct ProtoModule {
     let name: String
     let sourceGenerator: (Phases) -> [(String, String?)]
-    let imports: [String]
-    let product: PhasedModuleProduct
+    let imports: [Import]
+    let product: ModuleProduct
   }
 }
 
@@ -114,8 +114,8 @@ extension Expectation.ProtoModule {
 }
 
 public struct ModuleExpectation<Module: PhasedModule> {
-  public let name: String
-  public let sourceGenerator: (Module.Phases) -> [(String, String?)]
+  fileprivate let name: String
+  fileprivate let sourceGenerator: (Module.Phases) -> [(String, String?)]
 
   /// Returns an expectation that succeeds when every file in the module
   /// rebuilds, and fails when any file in the module is skipped.

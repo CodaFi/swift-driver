@@ -128,8 +128,8 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
     typealias Phases = HideAndShowFunc<T>.Phases
 
     static var name: String { "main" }
-    static var imports: [String] { [ ImportedModule<T>.name ] }
-    static var product: PhasedModuleProduct { .executable }
+    static var imports: [Import] { [ Import(ImportedModule<T>.self) ] }
+    static var product: ModuleProduct { .executable }
 
     enum Sources: String, CaseIterable, NameableByRawValue {
       case main
@@ -184,8 +184,8 @@ class HideAndShowFuncInStructAndExtensionTests: XCTestCase {
     typealias Phases = HideAndShowFunc<T>.Phases
 
     static var name: String { "imported" }
-    static var imports: [String] { [] }
-    static var product: PhasedModuleProduct { .library }
+    static var imports: [Import] { [] }
+    static var product: ModuleProduct { .library }
 
     enum Sources: String, CaseIterable, NameableByRawValue {
       case imported

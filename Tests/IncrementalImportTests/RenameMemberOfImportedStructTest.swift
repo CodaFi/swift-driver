@@ -61,8 +61,8 @@ class RenameMemberOfImportedStructTest: XCTestCase {
     typealias Phases = RenameMemberOfImportedStruct.Phases
 
     static var name: String { "main" }
-    static var imports: [String] { [ ImportedModule.name ] }
-    static var product: PhasedModuleProduct { .executable }
+    static var imports: [Import] { [ Import(ImportedModule.self) ] }
+    static var product: ModuleProduct { .executable }
 
     enum Sources: String, NameableByRawValue, CaseIterable {
       case main, otherFile
@@ -89,8 +89,8 @@ class RenameMemberOfImportedStructTest: XCTestCase {
     typealias Phases = RenameMemberOfImportedStruct.Phases
 
     static var name: String { "imported" }
-    static var imports: [String] { [] }
-    static var product: PhasedModuleProduct { .library }
+    static var imports: [Import] { [] }
+    static var product: ModuleProduct { .library }
 
 
     enum Sources: String, NameableByRawValue, CaseIterable {
